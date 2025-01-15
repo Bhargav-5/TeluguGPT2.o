@@ -39,6 +39,8 @@
             margin-top: 20px;
             border-top: 1px solid #ddd;
             padding-top: 20px;
+            height: 300px;
+            overflow-y: auto;
         }
         .chat {
             margin: 10px 0;
@@ -73,6 +75,11 @@
                 transform: rotate(360deg);
             }
         }
+        #historyButton {
+            background-color: #4CAF50;
+            color: white;
+            margin-top: 10px;
+        }
     </style>
 </head>
 <body>
@@ -82,6 +89,7 @@
             <textarea id="query" rows="3" placeholder="Type your question here..."></textarea>
             <button type="submit">Ask</button>
         </form>
+        <button id="historyButton">View Chat History</button>
         <div id="loader"><div></div></div>
         <div class="chat-box" id="chatBox"></div>
     </div>
@@ -90,6 +98,30 @@
         const form = document.getElementById('queryForm');
         const chatBox = document.getElementById('chatBox');
         const loader = document.getElementById('loader');
+        const historyButton = document.getElementById('historyButton');
+
+        // Fetch chat history when button is clicked
+        historyButton.addEventListener('click', async () => {
+            try {
+                const response = await fetch('https://defeated-cathi-bhargavramkongara-d69e1f60.koyeb.app/chat-history', {
+                    method: 'GET',
+                });
+                const data = await response.json();
+                const history = data.history;
+
+                chatBox.innerHTML = ''; // Clear current chat
+
+                // Display the entire history
+                history.forEach((entry) => {
+                    const div = document.createElement('div');
+                    div.className = entry.query ? 'chat user' : 'chat bot';
+                    div.textContent = entry.query ? `You: ${entry.query}` : `GPT: ${entry.response}`;
+                    chatBox.appendChild(div);
+                });
+            } catch (error) {
+                console.error('Error fetching chat history:', error);
+            }
+        });
 
         form.addEventListener('submit', async (event) => {
             event.preventDefault();

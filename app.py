@@ -90,6 +90,19 @@ client = OpenAI()
 
 MAX_HISTORY_LENGTH = 10
 
+@app.route('/chat-history', methods=['GET'])
+def get_chat_history():
+    try:
+        # Return all conversations from session
+        conversations = session.get("conversations", [])
+        return jsonify({
+            "history": conversations,
+            "total_messages": len(conversations)
+        })
+    except Exception as e:
+        logger.error(f"Error retrieving chat history: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
 @app.route('/ask', methods=['POST'])
 def ask():
     try:
@@ -110,7 +123,7 @@ def ask():
 
         # Build conversation context from previous queries
         context = "\n".join([
-            f"Previous query: {conv['query']}"
+            f"Previous query: {conv['query']}\nResponse: {conv.get('response', '')}"
             for conv in session["conversations"][-MAX_HISTORY_LENGTH:]
         ])
 
@@ -153,7 +166,8 @@ def ask():
             session.modified = True
 
             return jsonify({
-                "response": response_text
+                "response": response_text,
+                "history": session["conversations"]  # Include history in response
             })
 
         except Exception as e:
