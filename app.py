@@ -76,7 +76,6 @@ from flask_session import Session
 from datetime import datetime
 import logging
 
-# Set up logging
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
@@ -89,52 +88,50 @@ app.config["SESSION_TYPE"] = "filesystem"
 Session(app)
 client = OpenAI()
 
-MAX_HISTORY_LENGTH = 15  # Keeping reasonable context window
+MAX_HISTORY_LENGTH = 10
 
 @app.route('/ask', methods=['POST'])
 def ask():
     try:
-        # Log incoming request
-        logger.debug("Received request: %s", request.get_json())
-        
-        # Initialize or load chat history
-        if "chat_history" not in session:
-            session["chat_history"] = []
-            session["conversation_start"] = datetime.now().isoformat()
-            logger.debug("Initialized new chat history")
-        
+        # Get the query from payload
         data = request.get_json()
-        input_text = data.get("query", "")
-        
-        logger.debug("Input text: %s", input_text)
+        query = data.get("query", "")
+        logger.debug(f"Received query: {query}")
 
-        if not input_text:
-            logger.error("No input provided")
-            return jsonify({"error": "No input provided"}), 400
+        # Initialize chat history if not exists
+        if "conversations" not in session:
+            session["conversations"] = []
 
-        # Build conversation history string
-        conversation_history = ""
-        if session["chat_history"]:
-            for msg in session["chat_history"][-MAX_HISTORY_LENGTH*2:]:
-                role = "User" if msg["role"] == "user" else "Assistant"
-                conversation_history += f"{role}: {msg['content']}\n"
+        # Add the current query to conversations
+        session["conversations"].append({
+            "query": query,
+            "timestamp": datetime.now().isoformat()
+        })
 
-        # Create messages array with conversation history
+        # Build conversation context from previous queries
+        context = "\n".join([
+            f"Previous query: {conv['query']}"
+            for conv in session["conversations"][-MAX_HISTORY_LENGTH:]
+        ])
+
+        # Prepare messages for the API
         messages = [
             {
                 "role": "system",
-                "content": """You are a helpful assistant who responds in Telugu.
-                Previous conversation history:
-                """ + conversation_history
+                "content": "You are a helpful assistant who responds in Telugu. Remember our previous conversation context."
             },
             {
                 "role": "user",
-                "content": f"Previous conversation context:\n{conversation_history}\n\nCurrent query: {input_text}\n\nRespond in Telugu, maintaining the flow of our conversation."
+                "content": f"""Context of our conversation:
+                {context}
+
+                Current query: {query}
+
+                Please respond in Telugu, considering all previous context."""
             }
         ]
 
-        logger.debug("Sending messages to OpenAI: %s", messages)
-
+        # Call API
         try:
             completion = client.chat.completions.create(
                 model="gpt-4o-mini",
@@ -143,48 +140,38 @@ def ask():
                 max_tokens=500
             )
             
-            logger.debug("Received response from OpenAI")
             response_text = completion.choices[0].message.content.strip()
-            logger.debug("Response text: %s", response_text)
+            logger.debug(f"Response: {response_text}")
 
-            # Update chat history
-            session["chat_history"].append({"role": "user", "content": input_text})
-            session["chat_history"].append({"role": "assistant", "content": response_text})
+            # Store the response in conversations
+            session["conversations"][-1]["response"] = response_text
             
             # Maintain history length
-            if len(session["chat_history"]) > MAX_HISTORY_LENGTH * 2:
-                session["chat_history"] = session["chat_history"][-MAX_HISTORY_LENGTH*2:]
+            if len(session["conversations"]) > MAX_HISTORY_LENGTH:
+                session["conversations"] = session["conversations"][-MAX_HISTORY_LENGTH:]
             
             session.modified = True
-            
-            logger.debug("Sending response back to client")
+
             return jsonify({
-                "response": response_text,
-                "conversation_length": len(session["chat_history"]) // 2,
-                "conversation_start": session["conversation_start"]
+                "response": response_text
             })
 
         except Exception as e:
-            logger.error("API error: %s", str(e))
+            logger.error(f"API error: {str(e)}")
             return jsonify({"error": f"API error: {str(e)}"}), 500
 
     except Exception as e:
-        logger.error("Error in /ask endpoint: %s", str(e), exc_info=True)
-        return jsonify({
-            "error": str(e),
-            "message": "An error occurred while processing your request"
-        }), 500
+        logger.error(f"Error in /ask endpoint: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/reset', methods=['POST'])
 def reset_conversation():
     try:
-        session["chat_history"] = []
-        session["conversation_start"] = datetime.now().isoformat()
+        session["conversations"] = []
         session.modified = True
-        logger.debug("Chat history reset successfully")
-        return jsonify({"message": "Conversation history reset successfully"})
+        return jsonify({"message": "Conversation reset successful"})
     except Exception as e:
-        logger.error("Error in /reset endpoint: %s", str(e))
+        logger.error(f"Error in reset: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
