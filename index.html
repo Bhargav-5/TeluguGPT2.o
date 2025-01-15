@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPT Telugu Assistant</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f4f4f9;
+        }
+        .container {
+            max-width: 600px;
+            margin: auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            text-align: center;
+            color: #333;
+        }
+        textarea, button {
+            width: 100%;
+            margin-top: 10px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        button {
+            background-color: #5c67f2;
+            color: white;
+            cursor: pointer;
+        }
+        .chat-box {
+            margin-top: 20px;
+            border-top: 1px solid #ddd;
+            padding-top: 20px;
+        }
+        .chat {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .user {
+            background-color: #e6eaff;
+            align-self: flex-end;
+        }
+        .bot {
+            background-color: #e0ffe0;
+        }
+        #loader {
+            display: none;
+            margin: 20px auto;
+            text-align: center;
+        }
+        #loader div {
+            width: 24px;
+            height: 24px;
+            border: 4px solid #5c67f2;
+            border-radius: 50%;
+            border-top: 4px solid white;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            from {
+                transform: rotate(0deg);
+            }
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Telugu GPT Assistant</h1>
+        <form id="queryForm">
+            <textarea id="query" rows="3" placeholder="Type your question here..."></textarea>
+            <button type="submit">Ask</button>
+        </form>
+        <div id="loader"><div></div></div>
+        <div class="chat-box" id="chatBox"></div>
+    </div>
+
+    <script>
+        const form = document.getElementById('queryForm');
+        const chatBox = document.getElementById('chatBox');
+        const loader = document.getElementById('loader');
+
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const query = document.getElementById('query').value;
+
+            if (!query) return;
+
+            const userDiv = document.createElement('div');
+            userDiv.className = 'chat user';
+            userDiv.textContent = `You: ${query}`;
+            chatBox.appendChild(userDiv);
+
+            // Show the loader
+            loader.style.display = 'block';
+
+            try {
+                const response = await fetch('https://defeated-cathi-bhargavramkongara-d69e1f60.koyeb.app/ask', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ query })
+                });
+                const data = await response.json();
+
+                const botDiv = document.createElement('div');
+                botDiv.className = 'chat bot';
+                botDiv.textContent = `GPT: ${data.response}`;
+                chatBox.appendChild(botDiv);
+            } catch (error) {
+                console.error('Error:', error);
+            } finally {
+                // Hide the loader
+                loader.style.display = 'none';
+            }
+
+            form.reset();
+            chatBox.scrollTop = chatBox.scrollHeight;
+        });
+    </script>
+</body>
+</html>
