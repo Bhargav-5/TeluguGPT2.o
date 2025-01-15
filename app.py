@@ -123,7 +123,7 @@ def ask():
         messages.extend(session["chat_history"][-MAX_HISTORY_LENGTH*2:])
         
         current_prompt = (f"Answer the following query in Telugu, maintaining context "
-                         f"from our previous conversation: {input_text}")
+                         f"from our previous conversation, remember our conversations so that in future if user asks about past conversation you should be able to answer to it: {input_text}")
         messages.append({"role": "user", "content": current_prompt})
         
         logger.debug("Sending messages to OpenAI: %s", messages)
