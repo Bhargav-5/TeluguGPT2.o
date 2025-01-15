@@ -67,7 +67,6 @@
 # if __name__ == '__main__':
 #     port = int(os.environ.get('PORT', 5000)) 
 #     app.run(host='0.0.0.0', port=port, debug=True)
-
 import openai
 import os
 from openai import OpenAI
@@ -76,6 +75,7 @@ from flask_cors import CORS
 from flask_session import Session
 from datetime import datetime
 import logging
+import json
 
 # Set up logging
 logging.basicConfig(level=logging.DEBUG)
@@ -90,11 +90,16 @@ app.config["SESSION_TYPE"] = "filesystem"
 Session(app)
 client = OpenAI()
 
-MAX_HISTORY_LENGTH = 10
-SYSTEM_PROMPT = """You are a helpful assistant who responds in Telugu. 
-Maintain context of the conversation and refer to previous topics when relevant.
-Use consistent Telugu terminology throughout the conversation.
-If the user refers to something mentioned earlier, acknowledge it in your response."""
+MAX_HISTORY_LENGTH = 20  # Increased history length for better memory
+SYSTEM_PROMPT = """You are a helpful assistant who responds in Telugu. Important instructions:
+1. Always maintain full context of ALL previous conversations
+2. When user refers to past conversations, search through the chat history provided
+3. Keep track of important details mentioned in previous messages
+4. Use consistent terminology throughout the conversation
+5. Before responding, review the entire conversation history provided
+6. If user asks about something discussed before, reference the specific previous conversation
+
+Your mission is to maintain perfect conversational memory and context."""
 
 @app.route('/ask', methods=['POST'])
 def ask():
@@ -102,9 +107,11 @@ def ask():
         # Log incoming request
         logger.debug("Received request: %s", request.get_json())
         
+        # Initialize or load chat history
         if "chat_history" not in session:
             session["chat_history"] = []
             session["conversation_start"] = datetime.now().isoformat()
+            session["context_summary"] = ""
             logger.debug("Initialized new chat history")
         
         data = request.get_json()
@@ -116,30 +123,37 @@ def ask():
             logger.error("No input provided")
             return jsonify({"error": "No input provided"}), 400
 
-        # Log current session state
-        logger.debug("Current chat history length: %d", len(session.get("chat_history", [])))
-        
+        # Build context-aware messages
         messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+        
+        # Add context summary if exists
+        if session.get("context_summary"):
+            messages.append({
+                "role": "system", 
+                "content": f"Previous conversation summary: {session['context_summary']}"
+            })
+        
+        # Add chat history
         messages.extend(session["chat_history"][-MAX_HISTORY_LENGTH*2:])
         
-        current_prompt = (f"Answer the following query in Telugu, maintaining context "
-                         f"from our previous conversation, remember our conversations so that in future if user asks about past conversation you should be able to answer to it: {input_text}")
+        # Create a context-aware prompt
+        current_prompt = (
+            f"Previous conversation context: {json.dumps(session['chat_history'][-10:], ensure_ascii=False)}\n\n"
+            f"User's current query: {input_text}\n\n"
+            "Remember all details from our previous conversations and answer in Telugu. "
+            "If this query relates to any previous conversations, explicitly reference them in your response."
+        )
+        
         messages.append({"role": "user", "content": current_prompt})
         
         logger.debug("Sending messages to OpenAI: %s", messages)
 
-        # Verify API key is set
-        api_key = os.getenv('API_KEY')
-        if not api_key:
-            logger.error("API key is not set")
-            return jsonify({"error": "OpenAI API key is not configured"}), 500
-
         try:
             completion = client.chat.completions.create(
-                model="gpt-3.5-turbo",  # Changed from gpt-4o-mini to a valid model name
+                model="gpt-4o-mini",  # Using GPT-4 for better memory and context handling
                 messages=messages,
                 temperature=0.7,
-                max_tokens=500
+                max_tokens=1000  # Increased for more detailed responses
             )
             
             logger.debug("Received response from OpenAI")
@@ -150,10 +164,28 @@ def ask():
             logger.error("OpenAI API error: %s", str(e))
             return jsonify({"error": f"OpenAI API error: {str(e)}"}), 500
 
-        # Update chat history
+        # Update chat history with both query and response
         session["chat_history"].append({"role": "user", "content": input_text})
         session["chat_history"].append({"role": "assistant", "content": response_text})
         
+        # Update context summary periodically
+        if len(session["chat_history"]) % 10 == 0:
+            summary_messages = [
+                {"role": "system", "content": "Summarize the key points from this conversation history:"},
+                {"role": "user", "content": str(session["chat_history"][-10:])}
+            ]
+            try:
+                summary = client.chat.completions.create(
+                    model="gpt-4",
+                    messages=summary_messages,
+                    temperature=0.3,
+                    max_tokens=200
+                )
+                session["context_summary"] = summary.choices[0].message.content
+            except Exception as e:
+                logger.error("Error creating summary: %s", str(e))
+        
+        # Maintain history length
         if len(session["chat_history"]) > MAX_HISTORY_LENGTH * 2:
             session["chat_history"] = session["chat_history"][-MAX_HISTORY_LENGTH*2:]
         
@@ -178,6 +210,7 @@ def reset_conversation():
     try:
         session["chat_history"] = []
         session["conversation_start"] = datetime.now().isoformat()
+        session["context_summary"] = ""
         session.modified = True
         logger.debug("Chat history reset successfully")
         return jsonify({"message": "Conversation history reset successfully"})
