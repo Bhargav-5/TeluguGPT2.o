@@ -1,7 +1,7 @@
 import openai
 import os
 from openai import OpenAI
-from flask import Flask,render_template,request,jsonify,session
+from flask import Flask, render_template, request, jsonify, session
 from flask_cors import CORS
 from flask_session import Session
 
@@ -19,21 +19,24 @@ client = OpenAI()
 def ask():
     try:
         if "chat_history" not in session:
-            session["chat_history"] = []
+            session["chat_history"] = []  # Initialize chat history in session
+        
         data = request.get_json()
         input_text = data.get("query", "")
 
-
         if not input_text:
             return jsonify({"error": "No input provided"}), 400
-        
 
+        # Define the system prompt and user-specific prompt
+        prompt = f"Answer the user's query only in Telugu with correct grammar: {input_text}. Do not translate that query; just analyze and respond appropriately. Remember all chats."
 
-        # Define the system and user messages
-        prompt = f"Answer the user's query only in Telugu which is with correct grammar {input_text} do not translate that query and send response just analyze the user query and answer to it accordingly finally remember all the chats"
-
+        # Append the current user input to chat history
         session["chat_history"].append({"role": "user", "content": input_text})
+
+        # Build the message list for the API, including chat history
         messages = [{"role": "system", "content": "You are a helpful assistant."}] + session["chat_history"]
+
+        # Add the current prompt to the messages
         messages.append({"role": "user", "content": prompt})
 
         # Call the ChatGPT API
@@ -41,19 +44,18 @@ def ask():
             model="gpt-4o-mini",
             messages=messages
         )
-        
-        # Extract the content of the response
+
+        # Extract the response content
         response_text = completion.choices[0].message.content.strip()
-        # print("Response:", response_text) 
+
+        # Append the assistant's response to chat history
         session["chat_history"].append({"role": "assistant", "content": response_text})
-        session.modified = True  # Ensure the session is saved
+        session.modified = True  # Mark session as modified to save changes
 
-
- 
-
-        # Return the response
+        # Return the response as JSON
         return jsonify({"response": response_text})
     except Exception as e:
+        # Handle exceptions gracefully
         return jsonify({"error": str(e)}), 500
 
 # def generate_Telugu_Response(input_text):
