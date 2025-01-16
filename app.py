@@ -53,7 +53,6 @@ def ask():
         # Append the assistant's response to chat history
         session["chat_history"].append({"role": "assistant", "content": response_text})
         session.modified = True  # Mark session as modified to save changes
-        prev_chat.append(jsonify({"response": response_text}))
         print(session["chat_history"])
         # Return the response as JSON
         return jsonify({"response": response_text})
