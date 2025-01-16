@@ -15,7 +15,7 @@ app.config["SECRET_KEY"] = "KOREABC"
 app.config["SESSION_TYPE"] = "filesystem"
 Session(app)
 client = OpenAI()
-prev_chat = []
+
 
 @app.route('/ask', methods=['POST'])
 def ask():
@@ -30,7 +30,7 @@ def ask():
             return jsonify({"error": "No input provided"}), 400
 
         # Define the system prompt and user-specific prompt
-        prompt = f"Answer the user's query based on all {prev_chat} only in Telugu with correct grammar: {input_text}. Do not translate that query; just analyze and respond appropriately. Remember all conversations from {prev_chat} so that even if user asks about a conversation from somewhere in between past conversations you should be able to answer that."
+        prompt = f"Answer the user's query based on all {session["chat_history"]} only in Telugu with correct grammar: {input_text}. Do not translate that query; just analyze and respond appropriately. Remember all conversations from {session["chat_history"]} so that even if user asks about a conversation from somewhere in between past conversations you should be able to answer that."
 
         # Append the current user input to chat history
         session["chat_history"].append({"role": "user", "content": input_text})
@@ -54,7 +54,7 @@ def ask():
         session["chat_history"].append({"role": "assistant", "content": response_text})
         session.modified = True  # Mark session as modified to save changes
         prev_chat.append(jsonify({"response": response_text}))
-        print(prev_chat)
+        print(session["chat_history"])
         # Return the response as JSON
         return jsonify({"response": response_text})
     except Exception as e:
