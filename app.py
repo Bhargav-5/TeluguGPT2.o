@@ -85,11 +85,14 @@ client = OpenAI()
 
 def extract_key_information(text, response):
     """Helper function to identify and store key information from conversations"""
-    # Add system message to help identify key information
+    # Improved system message to better identify and relate information
     messages = [
-        {"role": "system", "content": "Extract key information from this conversation if present. "
-                                    "Look for details about: names, properties, belongings, relationships, etc. "
-                                    "Format: JSON-like key-value pairs. If no key info, return empty dict."},
+        {"role": "system", "content": """Extract key information from this conversation if present.
+        Look for details about: names, properties, belongings, relationships, etc.
+        If information is related to an existing entity (like a car), include the entity name.
+        Format output as a dictionary with nested structure when needed.
+        Example: {"car": {"name": "Safari", "color": "red"}} or {"person": {"name": "John", "age": 25}}
+        If no key info, return empty dict."""},
         {"role": "user", "content": f"User said: {text}\nAssistant replied: {response}"}
     ]
     
@@ -98,10 +101,24 @@ def extract_key_information(text, response):
             model="gpt-4o-mini",
             messages=messages
         )
-        info = eval(completion.choices[0].message.content)
-        return info if isinstance(info, dict) else {}
-    except:
+        extracted_info = eval(completion.choices[0].message.content)
+        
+        # Merge nested information properly
+        return extracted_info if isinstance(extracted_info, dict) else {}
+    except Exception as e:
+        print(f"Error in extract_key_information: {str(e)}")
         return {}
+
+def merge_memory(existing_memory, new_info):
+    """Merge new information with existing memory, preserving nested structures"""
+    for key, value in new_info.items():
+        if isinstance(value, dict):
+            if key not in existing_memory:
+                existing_memory[key] = {}
+            existing_memory[key].update(value)
+        else:
+            existing_memory[key] = value
+    return existing_memory
 
 @app.route('/ask', methods=['POST'])
 def ask():
@@ -118,17 +135,27 @@ def ask():
         if not input_text:
             return jsonify({"error": "No input provided"}), 400
 
-        # Build context from memory
-        memory_context = "Known information: " + ". ".join([f"{k}: {v}" for k, v in session["memory"].items()]) if session["memory"] else ""
-        
+        # Build context from memory with better structure
+        memory_context = ""
+        if session["memory"]:
+            context_parts = []
+            for entity, details in session["memory"].items():
+                if isinstance(details, dict):
+                    entity_info = [f"{k}: {v}" for k, v in details.items()]
+                    context_parts.append(f"{entity} has {', '.join(entity_info)}")
+                else:
+                    context_parts.append(f"{entity}: {details}")
+            memory_context = "Known information: " + ". ".join(context_parts)
+
         # Define the system prompt with memory context
-        system_prompt = """You are a helpful assistant that responds only in Telugu with correct grammar. 
-        Remember and use this information in your responses: {memory_context}
+        system_prompt = f"""You are a helpful assistant that responds only in Telugu with correct grammar. 
+        {memory_context}
+        Please remember and use all this information in your responses.
         Answer the query appropriately without translating the question itself."""
 
         # Build messages list with chat history and memory
         messages = [
-            {"role": "system", "content": system_prompt.format(memory_context=memory_context)}
+            {"role": "system", "content": system_prompt}
         ] + session["chat_history"]
 
         # Add the current query
@@ -146,24 +173,25 @@ def ask():
         # Extract and store key information from the conversation
         new_info = extract_key_information(input_text, response_text)
         if new_info:
-            session["memory"].update(new_info)
+            session["memory"] = merge_memory(session["memory"], new_info)
 
         # Update chat history
         session["chat_history"].append({"role": "user", "content": input_text})
         session["chat_history"].append({"role": "assistant", "content": response_text})
         
         # Limit chat history length to prevent token limits
-        if len(session["chat_history"]) > 20:  # Keep last 10 exchanges
+        if len(session["chat_history"]) > 20:
             session["chat_history"] = session["chat_history"][-20:]
         
         session.modified = True
 
         return jsonify({
             "response": response_text,
-            "memory": session["memory"]  # Optional: return current memory state for debugging
+            "memory": session["memory"]  # Return current memory state for debugging
         })
 
     except Exception as e:
+        print(f"Error in ask route: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
