@@ -141,101 +141,20 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>GPT Telugu Assistant</title>
+    <!-- ... previous styles ... -->
     <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 0;
-            padding: 20px;
-            background-color: #f4f4f9;
-        }
-        .container {
-            max-width: 800px;
-            margin: auto;
-            background: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-        }
-        h1 {
-            text-align: center;
-            color: #333;
-        }
-        textarea, button {
-            width: 100%;
-            margin-top: 10px;
-            padding: 10px;
-            border: 1px solid #ddd;
-            border-radius: 5px;
-        }
-        button {
-            background-color: #5c67f2;
-            color: white;
-            cursor: pointer;
-            transition: background-color 0.3s;
-        }
-        button:hover {
-            background-color: #4550e6;
-        }
-        .chat-container {
-            display: flex;
-            gap: 20px;
-            margin-top: 20px;
-        }
-        .chat-box {
-            flex: 1;
-            border-top: 1px solid #ddd;
-            padding-top: 20px;
-            max-height: 500px;
-            overflow-y: auto;
-        }
-        .memory-box {
-            width: 200px;
-            padding: 15px;
-            background: #f8f9fa;
-            border-radius: 5px;
-            font-size: 14px;
-        }
-        .memory-box h3 {
-            margin-top: 0;
-            color: #333;
-        }
-        .chat {
-            margin: 10px 0;
-            padding: 10px;
-            border-radius: 5px;
-            word-wrap: break-word;
-        }
-        .user {
-            background-color: #e6eaff;
-            margin-left: 20px;
-        }
-        .bot {
-            background-color: #e0ffe0;
-            margin-right: 20px;
-        }
-        #loader {
-            display: none;
-            margin: 20px auto;
-            text-align: center;
-        }
-        #loader div {
-            width: 24px;
-            height: 24px;
-            border: 4px solid #5c67f2;
-            border-radius: 50%;
-            border-top: 4px solid white;
-            animation: spin 1s linear infinite;
-        }
-        @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
+        /* ... your existing styles ... */
         .error {
             background-color: #ffe0e0;
             padding: 10px;
             border-radius: 5px;
             margin: 10px 0;
             color: #d00;
+        }
+        .error-details {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
         }
     </style>
 </head>
@@ -263,11 +182,38 @@
         const memoryContent = document.getElementById('memoryContent');
         const API_URL = 'https://defeated-cathi-bhargavramkongara-d69e1f60.koyeb.app/ask';
 
-        function updateMemoryDisplay(memory) {
-            if (Object.keys(memory).length === 0) {
-                memoryContent.textContent = 'No stored information yet';
-            } else {
-                memoryContent.textContent = JSON.stringify(memory, null, 2);
+        function showError(message, details = '') {
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error';
+            errorDiv.innerHTML = `
+                ${message}
+                ${details ? `<div class="error-details">Details: ${details}</div>` : ''}
+            `;
+            chatBox.appendChild(errorDiv);
+        }
+
+        async function makeRequest(query) {
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
+                    credentials: 'include',
+                    body: JSON.stringify({ query })
+                });
+
+                if (!response.ok) {
+                    const errorText = await response.text();
+                    throw new Error(`HTTP error! status: ${response.status}, ${errorText}`);
+                }
+
+                const data = await response.json();
+                return data;
+            } catch (error) {
+                console.error('Request error:', error);
+                throw error;
             }
         }
 
@@ -285,40 +231,52 @@
             loader.style.display = 'block';
 
             try {
-                const response = await fetch(API_URL, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    credentials: 'include',  // Enable sending cookies
-                    body: JSON.stringify({ query })
-                });
+                const data = await makeRequest(query);
                 
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                
-                const data = await response.json();
-
                 const botDiv = document.createElement('div');
                 botDiv.className = 'chat bot';
                 botDiv.textContent = `GPT: ${data.response || "Sorry, I couldn't understand that."}`;
                 chatBox.appendChild(botDiv);
 
-                // Update memory display
                 if (data.memory) {
                     updateMemoryDisplay(data.memory);
                 }
             } catch (error) {
                 console.error('Error:', error);
-                const errorDiv = document.createElement('div');
-                errorDiv.className = 'error';
-                errorDiv.textContent = "An error occurred. Please try again.";
-                chatBox.appendChild(errorDiv);
+                showError(
+                    "An error occurred while processing your request.",
+                    error.message
+                );
             } finally {
                 loader.style.display = 'none';
             }
 
             form.reset();
             chatBox.scrollTop = chatBox.scrollHeight;
+        });
+
+        function updateMemoryDisplay(memory) {
+            if (!memory || Object.keys(memory).length === 0) {
+                memoryContent.textContent = 'No stored information yet';
+            } else {
+                memoryContent.textContent = JSON.stringify(memory, null, 2);
+            }
+        }
+
+        // Initial test request to check connectivity
+        window.addEventListener('load', async () => {
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'OPTIONS',
+                    credentials: 'include'
+                });
+                if (!response.ok) {
+                    showError('Warning: API connection test failed. Some features might not work.');
+                }
+            } catch (error) {
+                console.error('API test failed:', error);
+                showError('Warning: Could not connect to API. Please check your connection.');
+            }
         });
     </script>
 </body>

@@ -69,7 +69,6 @@
 #     app.run(host='0.0.0.0', port=port, debug=True)
 import openai
 import os
-import json
 from openai import OpenAI
 from flask import Flask, render_template, request, jsonify, session
 from flask_cors import CORS
@@ -79,20 +78,41 @@ from datetime import timedelta
 os.environ["OPENAI_API_KEY"] = os.getenv('API_KEY')
 
 app = Flask(__name__)
-CORS(app, supports_credentials=True)  # Enable credentials in CORS
+
+# Updated CORS configuration
+CORS(app, 
+     resources={r"/ask": {"origins": ["http://localhost:5000", "https://your-frontend-domain.com"],
+                         "methods": ["POST", "OPTIONS"],
+                         "allow_headers": ["Content-Type"],
+                         "supports_credentials": True}},
+     supports_credentials=True)
 
 # Session configuration
-app.config["SECRET_KEY"] = "KOREABC"
-app.config["SESSION_TYPE"] = "filesystem"
-app.config["SESSION_PERMANENT"] = True  # Make sessions permanent
-app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=1)  # Session lasts for 1 day
-app.config["SESSION_FILE_DIR"] = "./flask_session"  # Specify session file directory
-app.config["SESSION_FILE_THRESHOLD"] = 500  # Number of sessions before cleanup
+app.config.update(
+    SECRET_KEY="KOREABC",
+    SESSION_TYPE="filesystem",
+    SESSION_PERMANENT=True,
+    PERMANENT_SESSION_LIFETIME=timedelta(days=1),
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE='None'
+)
 
 Session(app)
-
 client = OpenAI()
 
+@app.after_request
+def after_request(response):
+    """Add headers to every response."""
+    origin = request.headers.get('Origin', '')
+    if origin in ["http://localhost:5000", "https://your-frontend-domain.com"]:
+        response.headers.add('Access-Control-Allow-Origin', origin)
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type')
+    response.headers.add('Access-Control-Allow-Methods', 'POST,OPTIONS')
+    response.headers.add('Access-Control-Allow-Credentials', 'true')
+    return response
+
+# ... rest of your existing code ...
 def extract_key_information(text, response):
     """Helper function to identify and store key information from conversations"""
     messages = [
