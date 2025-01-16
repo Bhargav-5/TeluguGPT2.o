@@ -1,11 +1,10 @@
 # original
 import openai
 import os
-from openai import OpenAI
 from flask import Flask, render_template, request, jsonify, session
 from flask_cors import CORS
 from flask_session import Session
-
+from openai import OpenAI
 
 os.environ["OPENAI_API_KEY"] = os.getenv('API_KEY')
 
@@ -15,7 +14,6 @@ app.config["SECRET_KEY"] = "KOREABC"
 app.config["SESSION_TYPE"] = "filesystem"
 Session(app)
 client = OpenAI()
-
 
 @app.route('/ask', methods=['POST'])
 def ask():
@@ -30,7 +28,7 @@ def ask():
             return jsonify({"error": "No input provided"}), 400
 
         # Define the system prompt and user-specific prompt
-        prompt = f"Answer the user's query based on all {session["chat_history"]} only in Telugu with correct grammar: {input_text}. Do not translate that query; just analyze and respond appropriately. Remember all conversations from {session["chat_history"]} so that even if user asks about a conversation from somewhere in between past conversations you should be able to answer that."
+        prompt = f"Answer the user's query based on all {session['chat_history']} only in Telugu with correct grammar: {input_text}. Do not translate that query; just analyze and respond appropriately. Remember all conversations from {session['chat_history']} so that even if the user asks about a conversation from somewhere in between past conversations, you should be able to answer that."
 
         # Append the current user input to chat history
         session["chat_history"].append({"role": "user", "content": input_text})
@@ -53,7 +51,10 @@ def ask():
         # Append the assistant's response to chat history
         session["chat_history"].append({"role": "assistant", "content": response_text})
         session.modified = True  # Mark session as modified to save changes
+
+        # Debug: Print chat history to the backend console
         print(session["chat_history"])
+
         # Return the response as JSON
         return jsonify({"response": response_text})
     except Exception as e:
@@ -68,6 +69,7 @@ def ask():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000)) 
     app.run(host='0.0.0.0', port=port, debug=True)
+
 # import openai
 # import os
 # from flask import Flask, request, jsonify, session
