@@ -69,18 +69,28 @@
 #     app.run(host='0.0.0.0', port=port, debug=True)
 import openai
 import os
+import json
 from openai import OpenAI
 from flask import Flask, render_template, request, jsonify, session
 from flask_cors import CORS
 from flask_session import Session
+from datetime import timedelta
 
 os.environ["OPENAI_API_KEY"] = os.getenv('API_KEY')
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, supports_credentials=True)  # Enable credentials in CORS
+
+# Session configuration
 app.config["SECRET_KEY"] = "KOREABC"
 app.config["SESSION_TYPE"] = "filesystem"
+app.config["SESSION_PERMANENT"] = True  # Make sessions permanent
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=1)  # Session lasts for 1 day
+app.config["SESSION_FILE_DIR"] = "./flask_session"  # Specify session file directory
+app.config["SESSION_FILE_THRESHOLD"] = 500  # Number of sessions before cleanup
+
 Session(app)
+
 client = OpenAI()
 
 def extract_key_information(text, response):
@@ -104,23 +114,28 @@ def extract_key_information(text, response):
     except:
         return {}
 
-def format_memory_context(memory):
-    """Format memory into a clear, structured context string"""
-    context_parts = []
-    for entity, details in memory.items():
-        if isinstance(details, dict):
-            properties = [f"{k} is {v}" for k, v in details.items()]
-            context_parts.append(f"The {entity} {' and '.join(properties)}")
-    return " ".join(context_parts)
+def merge_memory(existing_memory, new_info):
+    """Merge new information with existing memory, preserving nested structures"""
+    merged = existing_memory.copy()
+    for key, value in new_info.items():
+        if isinstance(value, dict) and key in merged and isinstance(merged[key], dict):
+            merged[key].update(value)
+        else:
+            merged[key] = value
+    return merged
 
 @app.route('/ask', methods=['POST'])
 def ask():
     try:
-        # Initialize session variables if they don't exist
-        if "chat_history" not in session:
-            session["chat_history"] = []
-        if "memory" not in session:
+        # Ensure session is working
+        if not session.get("initialized"):
+            session["initialized"] = True
             session["memory"] = {}
+            session["chat_history"] = []
+            session.modified = True
+        
+        # Debug print
+        print("Current session memory before processing:", session.get("memory", {}))
         
         data = request.get_json()
         input_text = data.get("query", "")
@@ -128,26 +143,28 @@ def ask():
         if not input_text:
             return jsonify({"error": "No input provided"}), 400
 
-        # Format memory context in a more structured way
-        memory_context = format_memory_context(session["memory"])
-        
-        # Enhanced system prompt with explicit memory usage instruction
+        # Create memory context
+        memory = session.get("memory", {})
+        memory_context = ""
+        if memory:
+            context_parts = []
+            for entity, details in memory.items():
+                if isinstance(details, dict):
+                    properties = [f"{k} is {v}" for k, v in details.items()]
+                    context_parts.append(f"The {entity} {' and '.join(properties)}")
+            memory_context = "Known information: " + " ".join(context_parts)
+
+        # System prompt with memory context
         system_prompt = f"""You are a helpful assistant that responds only in Telugu with correct grammar.
-        IMPORTANT STORED INFORMATION: {memory_context}
+        IMPORTANT - Current Memory: {memory_context}
         You MUST use this stored information to answer questions about previously mentioned details.
-        When asked about any information that matches the stored details above, use that information in your response.
         Answer the query appropriately without translating the question itself."""
 
-        # Build messages list
+        # Build messages
         messages = [
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": input_text}
         ]
-
-        # Add a reminder message if the query might be about stored information
-        if any(keyword in input_text.lower() for keyword in ["what", "tell", "what is", "my"]):
-            memory_reminder = {"role": "system", "content": f"Remember to check and use this stored information: {memory_context}"}
-            messages.insert(1, memory_reminder)
 
         # Call the ChatGPT API
         completion = client.chat.completions.create(
@@ -158,30 +175,38 @@ def ask():
         # Extract the response
         response_text = completion.choices[0].message.content.strip()
 
-        # Extract and store key information from the conversation
+        # Extract and merge new information
         new_info = extract_key_information(input_text, response_text)
         if new_info:
-            session["memory"].update(new_info)
-
+            updated_memory = merge_memory(session.get("memory", {}), new_info)
+            session["memory"] = updated_memory
+            
         # Update chat history
-        session["chat_history"].append({"role": "user", "content": input_text})
-        session["chat_history"].append({"role": "assistant", "content": response_text})
+        chat_history = session.get("chat_history", [])
+        chat_history.append({"role": "user", "content": input_text})
+        chat_history.append({"role": "assistant", "content": response_text})
         
-        # Limit chat history length
-        if len(session["chat_history"]) > 20:
-            session["chat_history"] = session["chat_history"][-20:]
+        if len(chat_history) > 20:
+            chat_history = chat_history[-20:]
+            
+        session["chat_history"] = chat_history
+        session.modified = True  # Mark session as modified
         
-        session.modified = True
+        # Debug print
+        print("Updated session memory:", session.get("memory", {}))
 
         return jsonify({
             "response": response_text,
-            "memory": session["memory"]  # Return current memory state for debugging
+            "memory": session.get("memory", {})
         })
 
     except Exception as e:
         print(f"Error in ask route: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
+# Create session directory if it doesn't exist
+os.makedirs("./flask_session", exist_ok=True)
+
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=True)  
+    app.run(host='0.0.0.0', port=port, debug=True)
