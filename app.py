@@ -29,7 +29,7 @@ def ask():
             return jsonify({"error": "No input provided"}), 400
 
         # Define the system prompt and user-specific prompt
-        prompt = f"Answer the user's query only in Telugu with correct grammar: {input_text}. Do not translate that query; just analyze and respond appropriately. Remember all chats."
+        prompt = f"Answer the user's query only in Telugu with correct grammar: {input_text}. Do not translate that query; just analyze and respond appropriately. Remember all conversations so that even if user asks about a conversation from somewhere in between past conversations you should be able to answer that."
 
         # Append the current user input to chat history
         session["chat_history"].append({"role": "user", "content": input_text})
