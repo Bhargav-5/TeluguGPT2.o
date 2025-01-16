@@ -10,7 +10,7 @@ app = Flask(__name__)
 CORS(app)
 client = OpenAI()
 
-@app.route('/get_telugu_response', methods=['GET', 'POST'])
+@app.route('/get_telugu_response', methods=['POST'])
 def ask():
     try:
         data = request.get_json()
